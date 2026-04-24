@@ -4,7 +4,7 @@ all: esxdos.hdf esxdos.szx
 	fuse esxdos.szx --no-divide --divmmc --divmmc-write-protect --divmmc-file esxdos.hdf
 
 clean:
-	rm -f esxdos.hdf
+	rm -f esxdos.hdf esxdos.raw
 	rm -rf esxdos 101
 
 esxdos:
@@ -35,6 +35,9 @@ esxdos.hdf: esxdos
 	cp -r 101/BIN esxdos/
 	cp 101/BIN/BROWSE esxdos/BIN/B
 	cp -r 101/SYS esxdos/
-	hdfmonkey create --fat16 esxdos.hdf 16M FUSE
+	dd if=/dev/zero of=esxdos.raw bs=16M count=1
+	mkfs.vfat -n FUSE -F16 --mbr=y esxdos.raw
+	raw2hdf -v 1.1 esxdos.raw esxdos.hdf
+#	hdfmonkey create --fat16 esxdos.hdf 16M FUSE
 	hdfmonkey put esxdos.hdf esxdos/* /
 	rm -f BROWSE_latest.zip
