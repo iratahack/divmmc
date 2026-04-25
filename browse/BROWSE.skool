@@ -1,7 +1,21 @@
 @start
-@equ=BORDCR=$5c48
+@equ=BORDCR=$5C48
+@equ=DIVMMC_PORT=$E3
+@equ=BROWSE_BIN=$84D0
+@equ=NMI_HOME=$FE00
+@equ=NMI_BUF=$3200
+@equ=NMI_LEN=$200
+@equ=UPPER_RAM=$BBE2
+@equ=QUIT_FLAG=$BBE6
 @org
-; Routine at 2000
+; Parse command-line path argument
+;
+; Entry point for the BROWSE dot command. If HL is non-zero, copies the path
+; argument (stopping at the first null, colon or CR) into startDir, then falls
+; through to set the working directory. If HL is zero (no argument given),
+; skips straight to doLaunch.
+;
+; I:HL Pointer to command-line argument string, or 0 if none
 c$2000 LD A,H        ;
  $2001 OR L          ;
  $2002 JR Z,$2020    ;
@@ -16,9 +30,14 @@ c$2000 LD A,H        ;
  $2013 LDI           ;
  $2015 JR $2007      ;
 
-; Routine at 2017
+; Set working directory and launch
 ;
-; Used by the routine at #R$2000.
+; Null-terminates the path copied into startDir and calls f_chdir ($A9) to
+; change to it. Then saves the current BORDCR value, backs up the NMI handler
+; from NMI_HOME to NMI_BUF, copies the DivMMC page-save stub (L203F, $1B bytes)
+; to NMI_HOME and jumps into it.
+;
+; I:DE End of path in startDir (left by L2000 after copying the argument)
 c$2017 XOR A         ;
  $2018 LD (DE),A     ;
  $2019 LD A,$2A      ;
@@ -26,6 +45,7 @@ c$2017 XOR A         ;
  $201E RST $08       ;
  $201F DEFB $A9      ;
 ; This entry point is used by the routine at #R$2000.
+@label=doLaunch
 *$2020 LD A,($5C48)  ;
  $2023 LD ($2156),A  ;
  $2026 LD HL,$FE00   ;
@@ -38,11 +58,19 @@ c$2017 XOR A         ;
  $203A LDIR          ;
  $203C JP $FE00      ;
 
-; Routine at 203F
+; Save upper RAM to DivMMC pages
+;
+; Preserves the memory region that BROWSE.BIN will overwrite by copying it into
+; DivMMC pages $85..$88 (4 x 8 KB = 32 KB). HL advances through RAM ($84D0,
+; $A4D0, $C4D0, $E4D0) while DE is reset to the DivMMC window at $2000 each
+; iteration. Maps page $82 and jumps to L205A.
 c$203F LD A,$85      ;
  $2041 LD HL,$84D0   ;
+@label=savePage
 *$2044 OUT ($E3),A   ;
+@isub=LD DE,$2000
  $2046 LD DE,$2000   ;
+@isub=LD BC,$2000
  $2049 LD BC,$2000   ;
  $204C LDIR          ;
  $204E INC A         ;
@@ -52,9 +80,18 @@ c$203F LD A,$85      ;
  $2055 OUT ($E3),A   ;
  $2057 JP $205A      ;
 
-; Routine at 205A
+; Load BROWSE.BIN and run browser
 ;
-; Used by the routine at #R$203F.
+; Opens /bin/browse.bin on the system drive ($24), reads file metadata via
+; f_fstat to obtain the binary length (bytes IX+7..8 of the stat buffer), loads
+; the binary into BROWSE_BIN, then closes the file. Zeroes UPPER_RAM..$FFFF,
+; saves SP into the tail of startDir, sets STACK_TOP and calls the browser. On
+; return, restores the display file and attributes using system variable ATTR_P
+; ($5C8D), then restores BORDCR and drives the border port. Sets im2Flag if
+; QUIT_FLAG==$FF (clean quit from browser). Copies the RAM-restore stub (L20E5,
+; $44 bytes) to NMI_HOME and jumps into it.
+;
+; I:A Drive specifier ($24 = system drive)
 c$205A LD A,$24      ;
  $205C LD HL,$2145   ;
  $205F LD B,$01      ;
@@ -62,6 +99,8 @@ c$205A LD A,$24      ;
  $2062 DEFB $9A      ;
  $2063 RET C         ;
  $2064 LD ($2155),A  ;
+; Read file metadata via f_fstat to obtain the file length (16-bit value in
+; stat buffer at IX+7..8).
  $2067 LD HL,$2157   ;
  $206A RST $08       ;
  $206B DEFB $A1      ;
@@ -70,10 +109,12 @@ c$205A LD A,$24      ;
  $2072 LD B,(IX+$08) ;
  $2075 LD C,(IX+$07) ;
  $2078 LD A,($2155)  ;
+; Load BROWSE.BIN from the open file handle into memory at BROWSE_BIN.
  $207B LD HL,$84D0   ;
  $207E RST $08       ;
  $207F DEFB $9D      ;
  $2080 JR C,$20D7    ;
+; Close the file and zero upper RAM ($BBE2..$FFFF) before calling the browser.
  $2082 LD A,($2155)  ;
  $2085 RST $08       ;
  $2086 DEFB $9B      ;
@@ -84,12 +125,16 @@ c$205A LD A,$24      ;
  $208F LD DE,$BBE3   ;
  $2092 LD BC,$441D   ;
  $2095 LDIR          ;
+; Disable interrupts, park SP at STACK_TOP and call the browser entry point.
  $2097 DI            ;
- $2098 LD ($2261),SP ;
+ $2098 LD ($2263),SP ;
+@isub=LD SP,STACK_TOP
  $209C LD SP,$22A5   ;
  $209F CALL $84D0    ;
+; Browser returned; restore display-file ($4000..$57FF) and attributes
+; ($5800..$5AFF) from system variable ATTR_P.
  $20A2 EI            ;
- $20A3 LD SP,($2261) ;
+ $20A3 LD SP,($2263) ;
  $20A7 XOR A         ;
  $20A8 LD HL,$4000   ;
  $20AB LD (HL),A     ;
@@ -100,29 +145,44 @@ c$205A LD A,$24      ;
  $20B7 LD (HL),A     ;
  $20B8 LD BC,$02FF   ;
  $20BB LDIR          ;
+; Restore BORDCR from the saved value and drive the border port directly (bits
+; 5..3 of BORDCR -> bits 2..0 of port $FE).
  $20BD LD A,($2156)  ;
  $20C0 LD ($5C48),A  ;
  $20C3 SRL A         ;
  $20C5 SRL A         ;
  $20C7 SRL A         ;
  $20C9 OUT ($FE),A   ;
+; Check the browser quit code. $FF means a clean exit; set im2Flag so IM 2 will
+; be re-enabled on return.
  $20CB LD A,($BBE6)  ;
  $20CE CP $FF        ;
  $20D0 JR NZ,$20D7   ;
  $20D2 LD A,$01      ;
  $20D4 LD ($2128),A  ;
+; Copy the RAM-restore stub to NMI_HOME and transfer control there.
+@label=loadStub
 *$20D7 LD HL,$20E5   ;
  $20DA LD DE,$FE00   ;
  $20DD LD BC,$0044   ;
  $20E0 LDIR          ;
  $20E2 JP $FE00      ;
 
-; Routine at 20E5
+; Restore upper RAM from DivMMC pages
+;
+; Counterpart to L203F. Saves the current SP, switches to a temporary stack and
+; maps DivMMC pages $85..$88 in turn, copying each 8 KB page back to RAM
+; starting at $84D0. Page $86 is handled specially: if flag ($FE43) is non-zero
+; the destination pointer is advanced by 8 KB before copying (skipping a bank).
+; The final page ($88) copies only $1E00 bytes to avoid overwriting the running
+; stub near NMI_HOME. Maps page $82 and jumps to L2129.
 c$20E5 LD ($FE3E),SP ;
  $20E9 LD SP,$FF00   ;
  $20EC LD A,$85      ;
  $20EE LD DE,$84D0   ;
-; This entry point is used by the routine at #R$2105.
+; Page $86 only: if flag ($FE43) is non-zero, advance the destination pointer
+; by 8 KB before copying, then skip the LDIR.
+@label=restorePageLoop
 *$20F1 CP $86        ;
  $20F3 JR NZ,$2105   ;
  $20F5 LD B,A        ;
@@ -130,24 +190,32 @@ c$20E5 LD ($FE3E),SP ;
  $20F9 AND A         ;
  $20FA LD A,B        ;
  $20FB JR Z,$2105    ;
+@isub=LD BC,$2000
  $20FD LD BC,$2000   ;
  $2100 EX DE,HL      ;
  $2101 ADD HL,BC     ;
  $2102 EX DE,HL      ;
  $2103 JR $210F      ;
 
-; Routine at 2105
+; Inner body of DivMMC page-copy loop
 ;
-; Used by the routine at #R$20E5.
+; Maps page A to the DivMMC window at $2000, copies $2000 bytes from the window
+; to DE, increments A and loops back to restorePageLoop. After page $87 falls
+; through to copy the final $1E00 bytes of page $88, maps page $82 and jumps to
+; L2129.
 c$2105 OUT ($E3),A   ;
+@isub=LD HL,$2000
  $2107 LD HL,$2000   ;
+@isub=LD BC,$2000
  $210A LD BC,$2000   ;
  $210D LDIR          ;
 ; This entry point is used by the routine at #R$20E5.
+@label=nextPage
 *$210F INC A         ;
  $2110 CP $88        ;
  $2112 JR NZ,$20F1   ;
  $2114 OUT ($E3),A   ;
+@isub=LD HL,$2000
  $2116 LD HL,$2000   ;
  $2119 LD BC,$1E00   ;
  $211C LDIR          ;
@@ -156,12 +224,22 @@ c$2105 OUT ($E3),A   ;
  $2122 LD SP,$0000   ;
  $2125 JP $2129      ;
 
-; Unused
+; IM 2 enable flag
+;
+; .
+;
+; .
+;
+; Flag byte: set to $01 if IM 2 should be re-enabled before returning to BASIC
+; (written by L205A when QUIT_FLAG==$FF).
+@label=im2Flag
 s$2128 DEFS $01
 
-; Routine at 2129
+; Final cleanup and return
 ;
-; Used by the routine at #R$2105.
+; Copies the NMI handler from NMI_BUF back to NMI_HOME. If im2Flag is non-zero,
+; switches to IM 2 and enables interrupts. If fileHandle is non-zero, closes
+; the open file handle via f_close ($9B). Returns to the caller.
 c$2129 LD HL,$3200                ;
  $212C LD DE,$FE00                ;
  $212F LD BC,$0200                ;
@@ -171,6 +249,7 @@ c$2129 LD HL,$3200                ;
  $2138 JR Z,$213D                 ;
  $213A IM 2                       ;
  $213C EI                         ;
+@label=closeHandle
 *$213D LD A,($2155)               ;
  $2140 AND A                      ;
  $2141 RET Z                      ;
@@ -180,66 +259,40 @@ c$2129 LD HL,$3200                ;
 @label=browseName
  $2145 DEFM "/bin/browse.bin",$00 ;
 
-; Data block at 2155
+; Open file handle
 @label=fileHandle
 b$2155 DEFB $00
 
-; Data block at 2156
+; Saved BORDCR and file stat buffer
 @label=BORDCR_SAVE
 b$2156 DEFB $00
 @label=fileInfo
  $2157 DEFB $00,$00,$00,$00,$00,$00,$00,$00
  $215F DEFB $00,$00,$00
 
-; Data block at 2162
+; File stat padding byte
+@label=fileInfoPad
 b$2162 DEFB $00
 
-; Data block at 2163
+; Directory path buffer
 @label=startDir
-b$2163 DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $216B DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $2173 DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $217B DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $2183 DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $218B DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $2193 DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $219B DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $21A3 DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $21AB DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $21B3 DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $21BB DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $21C3 DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $21CB DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $21D3 DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $21DB DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $21E3 DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $21EB DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $21F3 DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $21FB DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $2203 DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $220B DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $2213 DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $221B DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $2223 DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $222B DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $2233 DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $223B DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $2243 DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $224B DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $2253 DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $225B DEFB $00,$00,$00,$00,$00,$00,$00,$00
+s$2163 DEFS $0100
 
-; Data block at 2263
+; Saved stack pointer
 @label=stackSave
 w$2263 DEFW $0000
 
-; Data block at 2265
-b$2265 DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $226D DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $2275 DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $227D DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $2285 DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $228D DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $2295 DEFB $00,$00,$00,$00,$00,$00,$00,$00
- $229D DEFB $00,$00,$00,$00,$00,$00,$00,$00
+; Temporary stack buffer
+;
+; .
+;
+; .
+;
+; Bottom of the temporary stack. SP is initialised to STACK_TOP; each PUSH
+; decrements SP toward STACK_END. The 64-byte region between STACK_END and
+; STACK_TOP is the usable stack space.
+@label=STACK_END
+s$2265 DEFS $40
+
+STACK_TOP:
 
