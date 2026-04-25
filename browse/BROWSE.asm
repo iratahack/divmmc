@@ -272,13 +272,13 @@ fileInfo:
 fileInfoPad:
   DEFB $00
 
-; Directory path buffer
-startDir:
-  DEFS $0100
-
 ; Saved stack pointer
 stackSave:
   DEFW $0000
+
+; Directory path buffer
+startDir:
+  DEFS $0100
 
 ; Temporary stack buffer
 ;
