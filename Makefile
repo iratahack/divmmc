@@ -1,11 +1,13 @@
 .PHONY: all run clean
 
+BWSR_DIR=101
+
 all: esxdos.hdf esxdos.szx
 	fuse esxdos.szx --no-divide --divmmc --divmmc-write-protect --divmmc-file esxdos.hdf
 
 clean:
 	rm -f esxdos.hdf esxdos.raw
-	rm -rf esxdos 101
+	rm -rf esxdos $(BWSR_DIR)
 
 esxdos:
 	wget http://www.esxdos.org/files/esxdos089.zip
@@ -32,9 +34,11 @@ snap: esxdos.hdf
 esxdos.hdf: esxdos
 	wget http://www.thefossilrecord.co.uk/wp-content/uploads/zx/BROWSE_latest.zip
 	unzip -o BROWSE_latest.zip
-	cp -r 101/BIN esxdos/
-	cp 101/BIN/BROWSE esxdos/BIN/B
-	cp -r 101/SYS esxdos/
+	cp -r $(BWSR_DIR)/BIN esxdos/
+	cp $(BWSR_DIR)/BIN/BROWSE esxdos/BIN/B
+	cp -r $(BWSR_DIR)/SYS esxdos/
+#	cp -r $(BWSR_DIR)/No_MMC_Memory/BIN esxdos/
+#	cp -r $(BWSR_DIR)/No_MMC_Memory/SYS esxdos/
 	dd if=/dev/zero of=esxdos.raw bs=16M count=1
 	mkfs.vfat -n FUSE -F16 --mbr=y esxdos.raw
 	raw2hdf -v 1.1 esxdos.raw esxdos.hdf
