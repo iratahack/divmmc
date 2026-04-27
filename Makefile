@@ -40,11 +40,10 @@ esxdos.hdf: esxdos
 	cp -r $(BWSR_DIR)/BIN esxdos/
 	cp $(BWSR_DIR)/BIN/BROWSE esxdos/BIN/B
 	cp -r $(BWSR_DIR)/SYS esxdos/
-#	cp -r $(BWSR_DIR)/No_MMC_Memory/BIN esxdos/
-#	cp -r $(BWSR_DIR)/No_MMC_Memory/SYS esxdos/
-	dd if=/dev/zero of=esxdos.raw bs=16M count=1
-	mkfs.vfat -n FUSE -F16 --mbr=y esxdos.raw
-	raw2hdf -v 1.1 esxdos.raw esxdos.hdf
-#	hdfmonkey create --fat16 esxdos.hdf 16M FUSE
+#	dd if=/dev/zero of=esxdos.raw bs=16M count=1
+#	mkfs.vfat -n FUSE -F16 --mbr=y esxdos.raw
+#	raw2hdf -v 1.1 esxdos.raw esxdos.hdf
+#	https://codeberg.org/chwe/hdfmonkey
+	hdfmonkey create --fat32 esxdos.hdf 64M FUSE
 	hdfmonkey put esxdos.hdf esxdos/* /
 	rm -f $(BWSR_FILE)
