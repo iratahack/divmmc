@@ -1,6 +1,9 @@
 .PHONY: all run clean
 
-BWSR_DIR=101
+#BWSR_DIR=101
+BWSR_FILE=BROWSE_TEST102-22.zip
+BWSR_LINK=http://www.thefossilrecord.co.uk/wp-content/uploads/zx/$(BWSR_FILE)
+BWSR_DIR=BROWSE_TEST102-22
 
 all: esxdos.hdf esxdos.szx
 	fuse esxdos.szx --no-divide --divmmc --divmmc-write-protect --divmmc-file esxdos.hdf
@@ -32,8 +35,8 @@ snap: esxdos.hdf
 	fuse --no-divide --divmmc --no-divmmc-write-protect --divmmc-file esxdos.hdf esxdos/ESXMMC.TAP
 
 esxdos.hdf: esxdos
-	wget http://www.thefossilrecord.co.uk/wp-content/uploads/zx/BROWSE_latest.zip
-	unzip -o BROWSE_latest.zip
+	wget $(BWSR_LINK)
+	unzip -o $(BWSR_FILE)
 	cp -r $(BWSR_DIR)/BIN esxdos/
 	cp $(BWSR_DIR)/BIN/BROWSE esxdos/BIN/B
 	cp -r $(BWSR_DIR)/SYS esxdos/
@@ -44,4 +47,4 @@ esxdos.hdf: esxdos
 	raw2hdf -v 1.1 esxdos.raw esxdos.hdf
 #	hdfmonkey create --fat16 esxdos.hdf 16M FUSE
 	hdfmonkey put esxdos.hdf esxdos/* /
-	rm -f BROWSE_latest.zip
+	rm -f $(BWSR_FILE)
