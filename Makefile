@@ -44,6 +44,6 @@ esxdos.hdf: esxdos
 #	mkfs.vfat -n FUSE -F16 --mbr=y esxdos.raw
 #	raw2hdf -v 1.1 esxdos.raw esxdos.hdf
 #	https://codeberg.org/chwe/hdfmonkey
-	hdfmonkey create --fat32 esxdos.hdf 64M FUSE
+	hdfmonkey create --fat32 esxdos.hdf 384M FUSE
 	hdfmonkey put esxdos.hdf esxdos/* /
 	rm -f $(BWSR_FILE)
