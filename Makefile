@@ -1,9 +1,9 @@
 .PHONY: all run clean
 
 #BWSR_DIR=101
-BWSR_FILE=BROWSE_TEST102-4.zip
+BWSR_FILE=BROWSE_latest.zip
 BWSR_LINK=http://www.thefossilrecord.co.uk/wp-content/uploads/zx/$(BWSR_FILE)
-BWSR_DIR=BROWSE_TEST102-4
+BWSR_DIR=102
 
 all: esxdos.hdf esxdos.szx
 	fuse esxdos.szx --no-divide --divmmc --divmmc-write-protect --divmmc-file esxdos.hdf
